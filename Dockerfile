@@ -27,14 +27,11 @@ COPY . .
 RUN chmod -R 777 storage bootstrap/cache
 
 # Instala dependencias con Composer
-# ⚠️ Se usa --no-scripts para evitar errores si aún no está configurado el entorno
-RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-scripts || true
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-scripts
 
 # Copia .env si no existe
 RUN test -f .env || cp .env.example .env
 
-# Genera clave de aplicación (no falla si ya está definida)
-RUN php artisan key:generate || true
 
 # Crea base de datos SQLite si no existe
 RUN mkdir -p database && touch database/database.sqlite && chmod -R 777 database
