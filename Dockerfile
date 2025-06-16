@@ -1,47 +1,46 @@
 # Usa imagen oficial de PHP con Apache
 FROM php:8.2-apache
 
-# Instala dependencias del sistema y extensiones PHP necesarias
+# Instala dependencias del sistema necesarias
 RUN apt-get update && apt-get install -y \
-    git unzip zip curl \
-    libpng-dev libonig-dev libxml2-dev libzip-dev \
-    sqlite3 libsqlite3-dev \
-    && docker-php-ext-install pdo pdo_sqlite mbstring gd zip
+    libpng-dev \
+    zip \
+    unzip \
+    git \
+    curl \
+    libonig-dev \
+    libxml2-dev \
+    libsqlite3-dev \
+    pkg-config \
+    && docker-php-ext-install pdo pdo_sqlite mbstring gd
 
-# Instala Node.js y npm (para Vite)
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs
-
-# Instala Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Instala Composer globalmente
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 # Establece el directorio de trabajo
 WORKDIR /var/www/html
 
-# Copia composer.json para aprovechar caché
-COPY composer.json composer.lock* ./
-
-# Instala dependencias PHP
-RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader
-
-# Copia todos los archivos del proyecto
+# Copia el proyecto completo al contenedor
 COPY . .
 
-# Instala dependencias de JavaScript y compila Vite
-RUN npm install && npm run build
+# Asegura permisos para Laravel
+RUN chmod -R 777 storage bootstrap/cache
 
-# Prepara SQLite y permisos
-RUN mkdir -p database && \
-    touch database/database.sqlite && \
-    chmod -R 777 database database/database.sqlite storage bootstrap/cache
+# Instala dependencias con Composer
+# ⚠️ Se usa --no-scripts para evitar errores si aún no está configurado el entorno
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-scripts || true
 
-# Copia .env si no existe y genera APP_KEY
-RUN cp .env.example .env || true && \
-    php artisan key:generate || true
+# Copia .env si no existe
+RUN test -f .env || cp .env.example .env
+
+# Genera clave de aplicación (no falla si ya está definida)
+RUN php artisan key:generate || true
+
+# Crea base de datos SQLite si no existe
+RUN mkdir -p database && touch database/database.sqlite && chmod -R 777 database
 
 # Configura Apache para servir desde /public
-RUN a2enmod rewrite headers && \
-    echo '<VirtualHost *:80>' > /etc/apache2/sites-available/000-default.conf && \
+RUN echo '<VirtualHost *:80>' > /etc/apache2/sites-available/000-default.conf && \
     echo '    DocumentRoot /var/www/html/public' >> /etc/apache2/sites-available/000-default.conf && \
     echo '    <Directory /var/www/html/public>' >> /etc/apache2/sites-available/000-default.conf && \
     echo '        AllowOverride All' >> /etc/apache2/sites-available/000-default.conf && \
@@ -49,8 +48,11 @@ RUN a2enmod rewrite headers && \
     echo '    </Directory>' >> /etc/apache2/sites-available/000-default.conf && \
     echo '</VirtualHost>' >> /etc/apache2/sites-available/000-default.conf
 
-# Exponer puerto
+# Habilita mod_rewrite y headers en Apache
+RUN a2enmod rewrite headers
+
+# Expone el puerto
 EXPOSE 80
 
-# Iniciar Apache
+# Comando por defecto: inicia Apache
 CMD ["apache2-foreground"]
